@@ -1,0 +1,77 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  phoneNumber String  @id
+  name        String?
+  email       String?
+  pointMk     Int     @default(0)
+  pointSpt    Int     @default(0)
+  pointDl     Int     @default(0)
+  usePoint    Int     @default(0)
+  totalPoint  Int     @default(0)
+  address     String?
+  subDistrict String?
+  district    String?
+  province    String?
+  postalCode  String?
+  latitude    Float?
+  longitude   Float?
+  profileImage String?
+  role         Int     @default(0)
+  orders      Order[]
+}
+
+model Product {
+  id          String @id @default(cuid())
+  name        String
+  description String? @default("")
+  price       Int
+  points      Int
+  image       String
+  category    String
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  userPhone      String
+  user           User        @relation(fields: [userPhone], references: [phoneNumber])
+  totalCash      Float
+  totalPoints    Int
+  paymentStatus  String      @default("unpaid")
+  paymentMethod  String      @default("qr") // qr or cod
+  status         String      @default("pending")
+  deliveryMethod String      @default("pickup") // pickup or delivery
+  createdAt      DateTime    @default(now())
+  items          OrderItem[]
+  notifications  PaymentNotification[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  name      String
+  price     Int
+  points    Int
+  quantity  Int
+}
+
+model PaymentNotification {
+  id        String   @id @default(cuid())
+  payload   String
+  amount    Float
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  createdAt DateTime @default(now())
+}
