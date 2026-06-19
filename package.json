@@ -21,6 +21,7 @@
     "@types/socket.io": "^3.0.2",
     "axios": "^1.17.0",
     "elysia": "^1.4.28",
+    "sharp": "^0.35.2",
     "socket.io": "^4.8.3"
   }
 }

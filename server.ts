@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { jwt } from '@elysiajs/jwt';
 import { staticPlugin } from '@elysiajs/static';
 import { cors } from '@elysiajs/cors';
+import sharp from 'sharp';
 import { store_url } from './config';
 import axios from 'axios';
 import { Server } from 'socket.io';
@@ -188,7 +189,7 @@ app
   .get('/', () => 'Hello Elysia')
   .post('/api/register', async ({ body, set, jwt }: { body: any, set: any, jwt: any }) => {
     try {
-      const { name, phoneNumber } = body;
+      const { name, phoneNumber, mooban } = body;
 
       if (!phoneNumber) {
         set.status = 400;
@@ -202,7 +203,9 @@ app
           pointMk: 0,
           pointSpt: 0,
           pointDl: 0,
-          usePoint: 0
+          usePoint: 0,
+          profileImage: 'default.png',
+          mooban: mooban || null
         }
       });
 
@@ -216,7 +219,7 @@ app
         "BirthDate": "2026-06-08T13:32:17+00:00",
         "Email": "",
         "Image": "",
-        "Address": "",
+        "Address": mooban || "",
         "Remarks": "",
         "Point": 0,
         "Level": 0,
@@ -245,7 +248,7 @@ app
         "BirthDate": "2026-06-08T13:32:17+00:00",
         "Email": "",
         "Image": "",
-        "Address": "",
+        "Address": mooban || "",
         "Remarks": "",
         "Point": 0,
         "Level": 0,
@@ -275,7 +278,7 @@ app
         "BirthDate": "2026-06-08T13:32:17+00:00",
         "Email": "",
         "Image": "",
-        "Address": "",
+        "Address": mooban || "",
         "Remarks": "",
         "Point": 0,
         "Level": 0,
@@ -460,10 +463,15 @@ app
       }
 
       const timestamp = Date.now();
-      const extension = image.name.split('.').pop() || 'png';
-      const filename = `profile_${payload.phoneNumber}_${timestamp}.${extension}`;
+      const filename = `profile_${payload.phoneNumber}_${timestamp}.jpg`;
 
-      await Bun.write(`public/profiles/${filename}`, image);
+      const buffer = Buffer.from(await image.arrayBuffer());
+      const resizedBuffer = await sharp(buffer)
+        .resize(400, 400, { fit: 'cover' })
+        .jpeg({ quality: 70 })
+        .toBuffer();
+
+      await Bun.write(`public/profiles/${filename}`, resizedBuffer);
 
       const user = await db.user.update({
         where: { phoneNumber: payload.phoneNumber },
@@ -557,15 +565,20 @@ app
       let filename = '';
       if (image && image instanceof File) {
         const timestamp = Date.now();
-        const extension = image.name.split('.').pop() || 'png';
 
         // Clean product name to be safe for filenames
         const safeProductName = name.toString().replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
         const baseName = safeProductName || 'product';
 
-        filename = `img_${baseName}_${timestamp}.${extension}`;
+        filename = `img_${baseName}_${timestamp}.jpg`;
 
-        await Bun.write(`public/products/${filename}`, image);
+        const buffer = Buffer.from(await image.arrayBuffer());
+        const resizedBuffer = await sharp(buffer)
+          .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 75 })
+          .toBuffer();
+
+        await Bun.write(`public/products/${filename}`, resizedBuffer);
       } else if (image && typeof image === 'string') {
         // Handle cases where image might be a URL string (fallback)
         filename = image;
@@ -598,6 +611,50 @@ app
       image: t.Optional(t.Any())
     })
   })
+  .delete('/api/products/:id', async ({ params: { id }, set, jwt, request }: { params: { id: string }, set: any, jwt: any, request: Request }) => {
+    try {
+      const authHeader = request.headers.get('authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        set.status = 401;
+        return { message: 'Unauthorized' };
+      }
+
+      const token = authHeader.split(' ')[1];
+      const payload = await jwt.verify(token);
+
+      if (!payload || payload.role !== 1) {
+        set.status = 403;
+        return { message: 'Forbidden: Admin access required' };
+      }
+
+      const product = await db.product.findUnique({ where: { id } });
+      if (!product) {
+        set.status = 404;
+        return { message: 'Product not found' };
+      }
+
+      // Delete local image file if it exists and starts with img_
+      if (product.image && product.image.startsWith('img_')) {
+        try {
+          const { unlink } = require('fs/promises');
+          await unlink(`public/products/${product.image}`);
+        } catch (err) {
+          console.error('Failed to delete product image file:', err);
+        }
+      }
+
+      await db.product.delete({ where: { id } });
+
+      return {
+        status: 'success',
+        message: 'Product deleted successfully'
+      };
+    } catch (error: any) {
+      console.error('Delete product error:', error);
+      set.status = 500;
+      return { message: error.message };
+    }
+  })
   .post('/api/orders', async ({ body, set, jwt, request }: { body: any, set: any, jwt: any, request: Request }) => {
     try {
       const authHeader = request.headers.get('authorization');
@@ -614,7 +671,7 @@ app
         return { message: 'Invalid token' };
       }
 
-      const { totalCash, totalPoints, items, deliveryMethod, paymentMethod } = body;
+      const { totalCash, totalPoints, items, deliveryMethod, paymentMethod, pickupDetails } = body;
 
       const user = await db.user.findUnique({
         where: { phoneNumber: payload.phoneNumber }
@@ -668,6 +725,7 @@ app
             paymentStatus: 'unpaid',
             deliveryMethod: deliveryMethod || 'pickup',
             paymentMethod: paymentMethod || 'qr',
+            pickupDetails: pickupDetails || null,
             items: {
               create: items.map((item: any) => ({
                 productId: item.id,
@@ -730,6 +788,7 @@ app
       totalPoints: t.Any(),
       deliveryMethod: t.Optional(t.String()),
       paymentMethod: t.Optional(t.String()),
+      pickupDetails: t.Optional(t.String()),
       items: t.Array(t.Object({
         id: t.String(),
         name: t.String(),

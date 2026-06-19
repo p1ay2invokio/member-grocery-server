@@ -20,6 +20,7 @@ model User {
   usePoint    Int     @default(0)
   totalPoint  Int     @default(0)
   address     String?
+  mooban      String?
   subDistrict String?
   district    String?
   province    String?
@@ -51,6 +52,7 @@ model Order {
   paymentMethod  String      @default("qr") // qr or cod
   status         String      @default("pending")
   deliveryMethod String      @default("pickup") // pickup or delivery
+  pickupDetails  String?
   createdAt      DateTime    @default(now())
   items          OrderItem[]
   notifications  PaymentNotification[]
